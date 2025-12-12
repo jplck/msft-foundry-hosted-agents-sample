@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Order Form with Assistant</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <h1>Order Assistant</h1>
+      <p>Fill in the form on the left, chat with the assistant on the right.</p>
+    </header>
+
+    <main class="app-main">
+      <section class="panel form-panel">
+        <h2>Order Form</h2>
+        <form id="order-form">
+          <div class="field-group">
+            <label for="customer-name">Customer Name</label>
+            <input type="text" id="customer-name" name="customer_name" placeholder="Jane Doe" />
+          </div>
+
+          <div class="field-group">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" placeholder="jane@example.com" />
+          </div>
+
+          <div class="field-group">
+            <label for="product-category">Product Category</label>
+            <select id="product-category" name="product_category">
+              <option value="">Select a category</option>
+              <option value="laptop">Laptop</option>
+              <option value="headphone">Headphone</option>
+              <option value="monitor">Monitor</option>
+              <option value="keyboard">Keyboard</option>
+            </select>
+          </div>
+
+          <div class="field-group">
+            <label for="product-name">Product Name</label>
+            <input type="text" id="product-name" name="product_name" placeholder="e.g., MacBook Pro 16-inch" />
+          </div>
+
+          <div class="field-group">
+            <label for="quantity">Quantity</label>
+            <select id="quantity" name="quantity">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="5">5</option>
+              <option value="10">10</option>
+            </select>
+          </div>
+
+          <div class="field-group">
+            <label for="notes">Notes / Special Instructions</label>
+            <textarea id="notes" name="notes" rows="4" placeholder="Any additional details..."></textarea>
+          </div>
+
+          <div id="validation-messages" class="validation-messages" aria-live="polite"></div>
+
+          <div class="form-actions">
+            <button type="button" id="validate-btn">Validate with Assistant</button>
+            <button type="submit">Submit Order</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel chat-panel">
+        <h2>Chat with Assistant</h2>
+        <div id="chat-log" class="chat-log"></div>
+        <form id="chat-form" class="chat-input-row">
+          <input type="text" id="chat-input" placeholder="Ask the assistant for help..." autocomplete="off" />
+          <button type="submit">Send</button>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/main.js"></script>
+</body>
+</html>

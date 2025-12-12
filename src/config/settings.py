@@ -25,14 +25,8 @@ class Settings:
     @classmethod
     def validate(cls) -> None:
         """Validate required settings are present."""
-        missing = []
         if not cls.PROJECT_ENDPOINT:
-            missing.append("PROJECT_ENDPOINT")
-        if not cls.PROJECT_API_KEY:
-            missing.append("PROJECT_API_KEY")
-
-        if missing:
-            raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
+            raise ValueError("Missing required environment variable: PROJECT_ENDPOINT")
 
 
 # Create global settings instance
