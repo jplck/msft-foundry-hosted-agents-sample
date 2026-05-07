@@ -8,6 +8,12 @@ This sample shows how to build a **multi-agent travel planning assistant** using
 | `trip-scout` | **Hosted Agent** | Yes | agent-framework |
 | `booking-manager` | **Hosted Agent** | Yes | LangGraph |
 | `tripmate` | **Workflow** | No | Foundry Workflow YAML |
+| `tripmate` (local) | **Workflow** | No | LangGraph (orchestrates the agents above) |
+
+Two orchestration options ship side by side:
+
+- **Foundry workflow** ([`src/workflows/tripmate.yaml`](src/workflows/tripmate.yaml)) — runs entirely in Foundry Agent Service, deployed by `azd up`.
+- **LangGraph workflow** ([`src/workflows_langgraph/tripmate.py`](src/workflows_langgraph/tripmate.py)) — runs **locally**, delegates each step to the same Foundry-hosted/prompt agents via [`langchain-azure-ai`](https://learn.microsoft.com/en-us/azure/foundry/how-to/develop/langchain-agents), and is visualizable in **LangGraph Studio** (`langgraph dev`).
 
 A single `azd up`:
 
@@ -98,11 +104,38 @@ An agent-framework-based container agent that searches for flights, hotels, and 
 
 A LangGraph-based container agent with a stateful tool-calling loop. Provides five booking tools: `check_availability`, `create_booking`, `modify_booking`, `get_booking`, and `cancel_booking`. The LLM decides which tools to call, executes them, and loops until the booking flow is complete.
 
-### TripMate Workflow
+### TripMate Workflow (Foundry)
 
 A Foundry Workflow YAML (`tripmate.yaml`) that orchestrates the conversation:
 1. Invokes the travel concierge to classify user intent
 2. Conditionally routes to trip-scout, booking-manager, or responds directly
+
+### TripMate Workflow (LangGraph, local)
+
+A LangGraph `StateGraph` defined in [`src/workflows_langgraph/tripmate.py`](src/workflows_langgraph/tripmate.py)
+mirrors the same routing logic but runs **on your machine** while still
+executing each agent server-side in Foundry via
+`AgentServiceFactory.get_agent_node`. Use it to:
+
+- iterate on orchestration logic without redeploying the workflow,
+- visualize, debug and replay runs in **LangGraph Studio** (`langgraph dev`),
+- compose additional local nodes (custom routers, post-processors, tools).
+
+Quick start (after `azd up`):
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r src/workflows_langgraph/requirements.txt
+
+# CLI
+python src/workflows_langgraph/tripmate.py "Plan a weekend in Barcelona in June"
+
+# LangGraph Studio (browser UI)
+langgraph dev
+```
+
+See [`src/workflows_langgraph/README.md`](src/workflows_langgraph/README.md) for details.
 
 ## How the `postdeploy` Hook Works
 
@@ -160,7 +193,12 @@ src/
   config/
     settings.py                 # Helper for reading config from env
   workflows/
-    tripmate.yaml               # TripMate workflow orchestration
+    tripmate.yaml               # TripMate workflow orchestration (Foundry)
+  workflows_langgraph/          # Local LangGraph orchestration (alternative)
+    tripmate.py                 # LangGraph StateGraph using Foundry agents
+    requirements.txt
+    README.md
+langgraph.json                  # LangGraph Studio entrypoint (`langgraph dev`)
 ```
 
 ## Customizing Agents and Images

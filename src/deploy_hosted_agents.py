@@ -69,35 +69,53 @@ def deploy() -> None:
         )
         print(f"Hosted agent '{config.name}' created: {agent.id}")
 
-        # Grant the agent's dedicated Entra identity Azure AI User at project scope
-        # so it can call models and reach the toolbox MCP endpoint.
-        principal_id = _extract_principal_id(agent)
-        if principal_id and project_arm_id:
-            assign_azure_ai_user_role(principal_id, project_arm_id)
-        elif not principal_id:
-            print(f"  WARNING: could not find agent identity principal for '{config.name}'.")
+        # Grant the agent's dedicated Entra identities Azure AI User at project scope
+        # so they can call models, read agent metadata, and reach the toolbox MCP endpoint.
+        # Each hosted agent has TWO identities exposed by the API:
+        #   * instance_identity — used by the running agent at request time
+        #   * blueprint         — used by the deployment / management plane
+        # Both need the role for end-to-end success.
+        principal_ids = _extract_principal_ids(agent)
+        if principal_ids and project_arm_id:
+            for pid in principal_ids:
+                assign_azure_ai_user_role(pid, project_arm_id)
+        elif not principal_ids:
+            print(f"  WARNING: could not find agent identity principals for '{config.name}'.")
         elif not project_arm_id:
             print("  WARNING: AZURE_AI_PROJECT_ID not set — skipping RBAC assignment.")
 
 
-def _extract_principal_id(agent_version) -> str | None:
-    """Best-effort extraction of the agent's Entra identity principal ID."""
-    for attr in ("identity", "agent_identity", "system_assigned_identity"):
-        identity = getattr(agent_version, attr, None)
-        if identity is None:
-            continue
-        for sub in ("principal_id", "principalId", "object_id", "objectId"):
-            value = getattr(identity, sub, None)
-            if not value and isinstance(identity, dict):
-                value = identity.get(sub)
-            if value:
-                return value
+def _extract_principal_ids(agent_version) -> list[str]:
+    """Return the agent's runtime + blueprint Entra principal IDs.
+
+    The Foundry API exposes hosted-agent identities under ``instance_identity``
+    (the running container's MI) and ``blueprint`` (the management-plane MI).
+    Both must be granted Azure AI User for the agent to function.
+    """
+    data: dict = {}
     as_dict = getattr(agent_version, "as_dict", None)
     if callable(as_dict):
         data = as_dict()
-        identity = data.get("identity") or data.get("agentIdentity") or {}
-        return identity.get("principalId") or identity.get("principal_id")
-    return None
+
+    principals: list[str] = []
+    seen: set[str] = set()
+    for key in ("instance_identity", "blueprint", "identity", "agent_identity"):
+        section = data.get(key) if data else getattr(agent_version, key, None)
+        if not section:
+            continue
+        if hasattr(section, "as_dict"):
+            section = section.as_dict()
+        if isinstance(section, dict):
+            pid = (
+                section.get("principal_id")
+                or section.get("principalId")
+                or section.get("object_id")
+                or section.get("objectId")
+            )
+            if pid and pid not in seen:
+                principals.append(pid)
+                seen.add(pid)
+    return principals
 
 
 if __name__ == "__main__":

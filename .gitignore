@@ -76,3 +76,9 @@ Thumbs.db
 
 # Distribution / packaging
 *.whl
+
+# LangGraph dev server (local checkpoints, cache, etc.)
+.langgraph_api/
+.langgraph/
+langgraph.db
+*.pkl

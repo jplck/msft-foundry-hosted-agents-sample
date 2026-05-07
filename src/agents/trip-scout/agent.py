@@ -9,9 +9,8 @@ from __future__ import annotations
 import os
 
 import httpx
-from agent_framework import ChatAgent
+from agent_framework import Agent, MCPStreamableHTTPTool
 from agent_framework.foundry import FoundryChatClient
-from agent_framework.tools import MCPStreamableHTTPTool
 from agent_framework_foundry_hosting import ResponsesHostServer
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from dotenv import load_dotenv
@@ -69,8 +68,8 @@ _chat_client = FoundryChatClient(
     credential=_credential,
 )
 
-agent = ChatAgent(
-    chat_client=_chat_client,
+agent = Agent(
+    client=_chat_client,
     instructions=_SYSTEM_PROMPT,
     tools=[_mcp_tool],
     default_options={"store": False},
