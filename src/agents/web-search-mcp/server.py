@@ -51,7 +51,10 @@ mcp = FastMCP(
     name="web-search-mcp",
     host="0.0.0.0",
     port=_PORT,
-    streamable_http_path="/mcp",
+    # Trailing slash matches what the Foundry toolbox MCP client requests;
+    # without it Starlette returns 307 and the client (httpx without
+    # follow_redirects) bails out with `list_tools` failing.
+    streamable_http_path="/mcp/",
 )
 
 
