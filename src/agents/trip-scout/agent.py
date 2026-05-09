@@ -1,6 +1,6 @@
 """Trip Scout Agent.
 
-Travel-search agent that uses Foundry Toolbox MCP (Bing Custom Web Search) to
+Travel-search agent that uses Foundry Toolbox MCP (custom web-search MCP server) to
 ground real travel options (flights, hotels, activities) for user requests.
 """
 
@@ -20,9 +20,11 @@ load_dotenv()
 
 _SYSTEM_PROMPT = """\
 You are a travel search assistant for TripMate AI.
-Use the toolbox web search tool to find real, current flight, hotel, and activity
-options for the user's travel request. Always:
+You MUST call the `toolbox-web_search` tool to find real, current flight, hotel,
+and activity options. Never answer from prior knowledge alone — always search
+first. For each user request:
 
+- Issue at least one `toolbox-web_search` call with a focused query.
 - Suggest at least 2 flight options, 2 hotel options, and 2 activities.
 - Quote prices in EUR with realistic ranges.
 - Include source links / citations from your tool results.
@@ -32,9 +34,12 @@ Be concise and friendly.
 """
 
 
+# Prefer the explicit, versioned URL written by the deploy script. The
+# platform-injected `FOUNDRY_AGENT_TOOLBOX_ENDPOINT` is an unversioned alias
+# and isn't a valid MCP route — only `/toolboxes/{name}/versions/{n}/mcp` is.
 _TOOLBOX_ENDPOINT = (
-    os.environ.get("FOUNDRY_AGENT_TOOLBOX_ENDPOINT")
-    or os.environ["TOOLBOX_MCP_ENDPOINT"]
+    os.environ.get("TOOLBOX_MCP_ENDPOINT")
+    or os.environ["FOUNDRY_AGENT_TOOLBOX_ENDPOINT"]
 )
 
 _credential = DefaultAzureCredential()
@@ -60,6 +65,9 @@ _mcp_tool = MCPStreamableHTTPTool(
     url=_TOOLBOX_ENDPOINT,
     http_client=_http_client,
     load_prompts=False,
+    # Prefix prevents collision with the model's built-in `web_search` tool,
+    # which otherwise gets dispatched as a no-op stub (duration=0, empty result).
+    tool_name_prefix="toolbox",
 )
 
 _chat_client = FoundryChatClient(

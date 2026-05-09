@@ -84,6 +84,9 @@ param enableHostedAgents bool
 @description('Enable monitoring for the AI project')
 param enableMonitoring bool = true
 
+@description('Comma-separated list of allowed domains for the web-search MCP server. Empty = no restriction.')
+param mcpAllowedDomains string = 'wikipedia.org,lonelyplanet.com,tripadvisor.com,booking.com,kayak.com,skyscanner.com'
+
 // Tags that should be applied to all resources.
 // 
 // Note that 'azd-service-name' tags should be applied separately to service host resources.
@@ -129,6 +132,33 @@ module aiProject 'core/ai/ai-project.bicep' = {
   }
 }
 
+// Container Apps environment for the custom MCP server.
+module mcpEnv 'core/host/container_app_env.bicep' = {
+  scope: rg
+  name: 'mcp-env'
+  params: {
+    location: location
+    tags: tags
+    environmentName: 'cae-${environmentName}'
+  }
+}
+
+// Web-search MCP server (Container App). The image is initially a placeholder;
+// `deploy_agents.py` builds & pushes the real image and updates the app.
+module mcpServer 'core/host/mcp_server.bicep' = {
+  scope: rg
+  name: 'mcp-server'
+  params: {
+    location: location
+    tags: tags
+    appName: 'ca-mcp-${environmentName}'
+    managedEnvironmentId: mcpEnv.outputs.id
+    registryLoginServer: aiProject.outputs.dependentResources.registry.loginServer
+    allowedDomains: mcpAllowedDomains
+    appInsightsConnectionString: aiProject.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
+  }
+}
+
 // Resources
 //output AZURE_RESOURCE_GROUP string = resourceGroupName
 //output AZURE_AI_ACCOUNT_ID string = aiProject.outputs.accountId
@@ -148,16 +178,10 @@ output APPLICATIONINSIGHTS_CONNECTION_STRING string = aiProject.outputs.APPLICAT
 //output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = aiProject.outputs.dependentResources.registry.connectionName
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = aiProject.outputs.dependentResources.registry.loginServer
 
-// Bing Search
-//output BING_GROUNDING_CONNECTION_NAME  string = aiProject.outputs.dependentResources.bing_grounding.connectionName
-//output BING_GROUNDING_RESOURCE_NAME string = aiProject.outputs.dependentResources.bing_grounding.name
-//output BING_GROUNDING_CONNECTION_ID string = aiProject.outputs.dependentResources.bing_grounding.connectionId
-
-// Bing Custom Search
-output BING_CUSTOM_GROUNDING_CONNECTION_NAME string = aiProject.outputs.dependentResources.bing_custom_grounding.connectionName
-output BING_CUSTOM_GROUNDING_NAME string = aiProject.outputs.dependentResources.bing_custom_grounding.name
-output BING_CUSTOM_GROUNDING_CONNECTION_ID string = aiProject.outputs.dependentResources.bing_custom_grounding.connectionId
-output BING_CUSTOM_GROUNDING_CONFIG_INSTANCE_NAME string = aiProject.outputs.dependentResources.bing_custom_grounding.configInstanceName
+// Custom MCP web-search server (Container App)
+output MCP_SERVER_NAME string = mcpServer.outputs.name
+output MCP_SERVER_URL string = '${mcpServer.outputs.url}/mcp/'
+output MCP_SERVER_APP_NAME string = mcpServer.outputs.name
 
 // Azure AI Search
 //output AZURE_AI_SEARCH_CONNECTION_NAME string = aiProject.outputs.dependentResources.search.connectionName

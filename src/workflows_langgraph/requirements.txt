@@ -2,6 +2,7 @@
 # (incl. LangGraph Studio via `langgraph dev`).
 langchain-core>=0.3.0
 langgraph>=1.0.0
+langgraph-checkpoint-sqlite>=2.0.0
 langgraph-cli[inmem]>=0.2.0
 azure-identity>=1.25.0
 openai>=1.40.0

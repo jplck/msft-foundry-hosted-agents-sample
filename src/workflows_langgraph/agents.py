@@ -47,27 +47,57 @@ def _make_credential(use_managed_identity: bool = False) -> TokenCredential:
     )
 
 
-def _extract_user_text(state: Any) -> str:
+# TODO(memory): switch to server-side Foundry conversations once the
+# per-agent (hosted) endpoints accept project-scoped conversation IDs.
+# Today, ``conversations.create()`` against the project endpoint returns a
+# conversation that prompt agents can join, but the hosted-agent endpoint
+# returns 404 for the same ID. Until the platform unifies that, we rely on
+# LangGraph's checkpointer + full message history per request (below).
+# Tracking issue / docs: https://aka.ms/foundry/agents/conversations
+
+
+def _message_to_text(msg: BaseMessage) -> str:
+    content = msg.content
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict):
+                t = block.get("text")
+                if t:
+                    parts.append(t)
+            else:
+                parts.append(str(block))
+        return "".join(parts)
+    return str(content or "")
+
+
+def _messages_as_input(state: Any) -> list[dict]:
+    """Convert graph state messages into an OpenAI Responses ``input`` list.
+
+    Maps LangChain ``HumanMessage`` / ``AIMessage`` to ``{"role": ..., "content": ...}``
+    so each agent receives the full conversation context (memory across the
+    graph) in a way both prompt and hosted Foundry endpoints accept.
+    """
     messages = state.get("messages", []) if isinstance(state, dict) else []
     if isinstance(messages, BaseMessage):
         messages = [messages]
-    for msg in reversed(list(messages)):
+    out: list[dict] = []
+    for msg in messages:
+        text = _message_to_text(msg)
+        if not text:
+            continue
         if isinstance(msg, HumanMessage):
-            content = msg.content
-            if isinstance(content, str):
-                return content
-            if isinstance(content, list):
-                parts: list[str] = []
-                for block in content:
-                    if isinstance(block, dict):
-                        text = block.get("text")
-                        if text:
-                            parts.append(text)
-                    else:
-                        parts.append(str(block))
-                return "".join(parts)
-            return str(content or "")
-    raise ValueError("No HumanMessage found in graph state.")
+            role = "user"
+        elif isinstance(msg, AIMessage):
+            role = "assistant"
+        else:
+            continue  # skip system / tool / unknown
+        out.append({"role": role, "content": text})
+    if not out:
+        raise ValueError("No usable messages found in graph state.")
+    return out
 
 
 def _output_text(response: Any) -> str:
@@ -126,6 +156,10 @@ def prompt_agent_node(
     deliberately — Foundry rejects the call when ``model`` is specified
     alongside an ``agent_reference`` unless it matches the agent's model
     exactly.
+
+    The full conversation history from graph state is sent as ``input``,
+    so the agent has memory across turns when the graph runs with a
+    checkpointer (e.g. SQLite) keyed on a stable ``thread_id``.
     """
     project_endpoint = project_endpoint.rstrip("/")
     creds = credential or _make_credential()
@@ -136,11 +170,10 @@ def prompt_agent_node(
     )
 
     def _invoke(state) -> dict:
-        user_text = _extract_user_text(state)
         response = client.with_options(
             default_headers={"Authorization": f"Bearer {token_provider()}"},
         ).responses.create(
-            input=user_text,
+            input=_messages_as_input(state),
             extra_body={
                 "agent_reference": {"name": name, "type": "agent_reference"}
             },
@@ -167,6 +200,8 @@ def hosted_agent_node(
 
     Calls the per-agent endpoint with the ``Foundry-Features`` header and
     retries the typical cold-start ``424 session_not_ready`` response.
+    Sends the full conversation history from graph state so the agent
+    has memory across turns when the graph runs with a checkpointer.
 
     Parameters
     ----------
@@ -179,7 +214,7 @@ def hosted_agent_node(
     creds = credential or _make_credential()
     token_provider = get_bearer_token_provider(creds, _TOKEN_SCOPE)
     base_url = f"{project_endpoint}/agents/{name}/endpoint/protocols/openai"
-    client = OpenAI(
+    hosted_client = OpenAI(
         base_url=base_url,
         api_key="placeholder",
         default_query={"api-version": api_version},
@@ -187,15 +222,15 @@ def hosted_agent_node(
     model = f"{name}:{version}" if version else name
 
     def _invoke(state) -> dict:
-        user_text = _extract_user_text(state)
+        input_messages = _messages_as_input(state)
 
         def _do():
-            return client.with_options(
+            return hosted_client.with_options(
                 default_headers={
                     "Authorization": f"Bearer {token_provider()}",
                     **_HOSTED_FEATURE_HEADER,
                 },
-            ).responses.create(model=model, input=user_text)
+            ).responses.create(model=model, input=input_messages)
 
         response = _call_with_cold_start_retry(
             _do,

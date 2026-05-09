@@ -17,7 +17,7 @@ Two orchestration options ship side by side:
 
 A single `azd up`:
 
-- Creates the Azure AI Foundry project, Bing Custom Search, and supporting resources using Bicep
+- Creates the Azure AI Foundry project, a custom web-search MCP server (Container App), and supporting resources using Bicep
 - Builds and pushes agent container images to Azure Container Registry (ACR)
 - Creates a declarative prompt agent (travel concierge) — no container needed
 - Creates hosted agents for trip search and booking management
@@ -75,8 +75,8 @@ User: "Hello!"
 
    During `azd up` the following happens:
 
-   - Bicep templates in `infra/` are deployed (AI project, ACR, Bing Custom Search, storage, monitoring, etc.).
-   - `azd` writes an environment-specific `.env` file into `.azure/<env-name>/.env` with outputs like `AZURE_AI_PROJECT_ENDPOINT`, `AZURE_CONTAINER_REGISTRY_ENDPOINT`, `BING_CUSTOM_GROUNDING_CONNECTION_NAME`, etc.
+   - Bicep templates in `infra/` are deployed (AI project, ACR, Container Apps environment, web-search MCP server, storage, monitoring, etc.).
+   - `azd` writes an environment-specific `.env` file into `.azure/<env-name>/.env` with outputs like `AZURE_AI_PROJECT_ENDPOINT`, `AZURE_CONTAINER_REGISTRY_ENDPOINT`, `MCP_SERVER_URL`, etc.
    - The **postdeploy hooks** defined in `azure.yaml` run automatically (see below).
 
 4. **Verify deployment:**
@@ -86,7 +86,7 @@ User: "Hello!"
    - A `.env` file at the repo root populated with connection info and image URLs
    - Four agents created in your Azure AI project:
      - `travel-concierge` – Declarative prompt agent that classifies intent and routes
-     - `trip-scout` – Searches flights, hotels, and activities via Bing
+     - `trip-scout` – Searches flights, hotels, and activities via the custom web-search MCP server
      - `booking-manager` – Handles booking, modification, and cancellation
      - `tripmate` – Workflow that orchestrates the conversation
 
@@ -98,7 +98,7 @@ Defined entirely via `PromptAgentDefinition` in `deploy_prompt_agents.py` — no
 
 ### Trip Scout (agent-framework Hosted Agent)
 
-An agent-framework-based container agent that searches for flights, hotels, and activities based on user travel queries. Uses Bing Custom Search for grounding. Returns structured results with prices, ratings, and an estimated trip budget.
+An agent-framework-based container agent that searches for flights, hotels, and activities based on user travel queries. Uses the custom web-search MCP server (Azure Container App backed by DuckDuckGo with a configurable allowed-domains list) for grounding. Returns structured results with prices, ratings, and an estimated trip budget.
 
 ### Booking Manager (LangGraph Hosted Agent)
 
@@ -163,7 +163,7 @@ In order, it does:
    - **`deploy_hosted_agents.py`** – Auto-discovers hosted agents from `src/agents/*/` via `__init__.py` configs, builds each container image on ACR via `az acr build`, and registers them in Foundry
    - **`deploy_workflow_agents.py`** – Deploys all workflow YAML files from `src/workflows/` as **workflow agents**
 
-   Bing Custom Search tool integration is configured when `BING_CUSTOM_GROUNDING_CONNECTION_NAME` is set.
+   The Foundry toolbox is wired to the custom web-search MCP server via the `MCP_SERVER_URL` output produced by Bicep.
 
 Net result: every time you run `azd up` (or `azd deploy` that triggers the postdeploy hooks), your hosted agents are rebuilt and redeployed from source.
 

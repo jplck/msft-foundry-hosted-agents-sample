@@ -74,7 +74,14 @@ _credential = DefaultAzureCredential(exclude_managed_identity_credential=not _us
 
 
 class TripMateState(MessagesState):
-    """Graph state — adds the routing decision parsed from the concierge."""
+    """Graph state.
+
+    * ``messages`` (inherited) — full LangGraph chat history. Persisted
+      via the SQLite checkpointer so each thread retains short-term
+      memory across turns; every agent call resends the full history
+      as ``input`` so all agents share the same context.
+    * ``next_agent`` — routing decision parsed from the concierge.
+    """
 
     next_agent: str | None
 
@@ -177,7 +184,39 @@ def _route(
 # ---------------------------------------------------------------------------
 
 
-def build_graph():
+# Short-term memory: a SQLite checkpointer keyed on ``thread_id`` so each
+# chat thread retains its message history across graph invocations. The DB
+# file is configurable; default lives next to this module.
+#
+# When ``langgraph dev`` runs the graph, it injects its own platform
+# checkpointer and ignores any compiled-in one — so the SQLite checkpointer
+# only kicks in for direct ``graph.invoke(..., config={"configurable": {"thread_id": ...}})``
+# calls (CLI / scripts / your own host).
+SQLITE_PATH = Path(
+    os.environ.get(
+        "TRIPMATE_SQLITE_PATH",
+        str(_REPO_ROOT / ".langgraph_sqlite" / "tripmate.sqlite"),
+    )
+)
+
+
+def _make_checkpointer():
+    try:
+        from langgraph.checkpoint.sqlite import SqliteSaver
+    except ImportError as exc:
+        raise RuntimeError(
+            "langgraph-checkpoint-sqlite is required for SQLite memory. "
+            "Install it: pip install langgraph-checkpoint-sqlite"
+        ) from exc
+
+    SQLITE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    import sqlite3
+
+    conn = sqlite3.connect(str(SQLITE_PATH), check_same_thread=False)
+    return SqliteSaver(conn)
+
+
+def build_graph(*, checkpointer=None):
     workflow = StateGraph(TripMateState)
 
     workflow.add_node("concierge", concierge_node)
@@ -199,9 +238,12 @@ def build_graph():
     workflow.add_edge("trip_scout", END)
     workflow.add_edge("booking_manager", END)
 
-    return workflow.compile()
+    return workflow.compile(checkpointer=checkpointer)
 
 
+# Default exported graph: no compiled-in checkpointer so ``langgraph dev``
+# can attach its own. The CLI block below builds a separate instance with
+# the SQLite checkpointer for stand-alone runs.
 graph = build_graph()
 
 
@@ -218,9 +260,24 @@ if __name__ == "__main__":
         nargs="?",
         default="I want to plan a weekend trip to Barcelona in June.",
     )
+    parser.add_argument(
+        "--thread-id",
+        default="cli",
+        help=(
+            "Thread ID used to look up / persist short-term memory in the "
+            "SQLite checkpointer. Reuse the same value across invocations "
+            "to continue a conversation."
+        ),
+    )
     args = parser.parse_args()
 
-    result = graph.invoke({"messages": [HumanMessage(content=args.query)]})
+    cli_graph = build_graph(checkpointer=_make_checkpointer())
+    config = {"configurable": {"thread_id": args.thread_id}}
+
+    result = cli_graph.invoke(
+        {"messages": [HumanMessage(content=args.query)]},
+        config=config,
+    )
     for message in result["messages"]:
         role = getattr(message, "type", "?")
         name = getattr(message, "name", None) or ""
@@ -228,3 +285,4 @@ if __name__ == "__main__":
         print(f"--- {prefix} ---")
         print(_message_text(message))
     print(f"\nrouted to: {result.get('next_agent')!r}")
+    print(f"thread_id: {args.thread_id!r}  (sqlite: {SQLITE_PATH})")

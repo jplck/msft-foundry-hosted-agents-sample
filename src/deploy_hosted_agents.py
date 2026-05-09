@@ -28,7 +28,15 @@ def deploy() -> None:
 
     protocols = [ProtocolVersionRecord(protocol=AgentProtocol.RESPONSES, version="1.0.0")]
 
-    toolbox_endpoint = f"{project_endpoint}/toolboxes/{TOOLBOX_NAME}/mcp?api-version=v1"
+    # Pin to the most recently created toolbox version. The unversioned
+    # `/toolboxes/{name}/mcp` route is not a valid MCP endpoint; the toolbox
+    # MCP server is exposed per-version at `/toolboxes/{name}/versions/{n}/mcp`.
+    toolbox_version = _latest_toolbox_version(client, TOOLBOX_NAME)
+    toolbox_endpoint = (
+        f"{project_endpoint}/toolboxes/{TOOLBOX_NAME}"
+        f"/versions/{toolbox_version}/mcp?api-version=v1"
+    )
+    print(f"Using toolbox '{TOOLBOX_NAME}' version '{toolbox_version}'")
 
     # Inside containers, use the new SDK env var names. We also keep the legacy
     # AZURE_AI_* names for any code paths still reading them.
@@ -44,6 +52,7 @@ def deploy() -> None:
         # Avoid the platform-reserved FOUNDRY_ prefix for our own values.
         "TOOLBOX_NAME": TOOLBOX_NAME,
         "TOOLBOX_MCP_ENDPOINT": toolbox_endpoint,
+        "TOOLBOX_VERSION": str(toolbox_version),
     }
 
     for config in discover_hosted_agents():
@@ -83,6 +92,40 @@ def deploy() -> None:
             print(f"  WARNING: could not find agent identity principals for '{config.name}'.")
         elif not project_arm_id:
             print("  WARNING: AZURE_AI_PROJECT_ID not set — skipping RBAC assignment.")
+
+
+def _latest_toolbox_version(client, name: str) -> str:
+    """Return the highest-numbered version of the named toolbox.
+
+    The Foundry MCP route requires an explicit version segment; there's no
+    'latest' alias on the unversioned URL. Falls back to the toolbox's
+    ``default_version`` if version listing is unavailable.
+    """
+    try:
+        versions = list(client.beta.toolboxes.list_versions(name=name))
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"  WARNING: could not list versions for toolbox '{name}': {exc}")
+        versions = []
+
+    numeric: list[int] = []
+    for v in versions:
+        raw = getattr(v, "version", None)
+        if raw is None and hasattr(v, "as_dict"):
+            raw = v.as_dict().get("version")
+        try:
+            numeric.append(int(str(raw)))
+        except (TypeError, ValueError):
+            continue
+    if numeric:
+        return str(max(numeric))
+
+    tb = client.beta.toolboxes.get(name=name)
+    default = getattr(tb, "default_version", None)
+    if default is None and hasattr(tb, "as_dict"):
+        default = tb.as_dict().get("default_version")
+    if not default:
+        raise RuntimeError(f"Could not determine a version for toolbox '{name}'.")
+    return str(default)
 
 
 def _extract_principal_ids(agent_version) -> list[str]:

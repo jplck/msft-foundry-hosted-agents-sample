@@ -41,19 +41,14 @@ var abbrs = loadJsonContent('../../abbreviations.json')
 var hasStorageConnectionInConfig = length(filter(additionalDependentResources, conn => conn.resource == 'storage')) > 0
 var hasAcrConnection = length(filter(additionalDependentResources, conn => conn.resource == 'registry')) > 0
 var hasSearchConnectionInConfig = length(filter(additionalDependentResources, conn => conn.resource == 'azure_ai_search')) > 0
-var hasBingConnection = length(filter(additionalDependentResources, conn => conn.resource == 'bing_grounding')) > 0
-// Always deploy AI Search and Storage (required for AI Search) and Bing Custom Grounding
+// Always deploy AI Search and Storage (required for AI Search).
 var hasSearchConnection = true
 var hasStorageConnection = true
-var hasBingCustomConnection = true
 
 // Extract connection names from ai.yaml for each resource type
 var storageConnectionName = hasStorageConnectionInConfig ? filter(additionalDependentResources, conn => conn.resource == 'storage')[0].connectionName : 'storage-connection'
 var acrConnectionName = hasAcrConnection ? filter(additionalDependentResources, conn => conn.resource == 'registry')[0].connectionName : ''
 var searchConnectionName = hasSearchConnectionInConfig ? filter(additionalDependentResources, conn => conn.resource == 'azure_ai_search')[0].connectionName : 'azure-ai-search-connection'
-var bingConnectionName = hasBingConnection ? filter(additionalDependentResources, conn => conn.resource == 'bing_grounding')[0].connectionName : ''
-var hasBingCustomConfig = length(filter(additionalDependentResources, conn => conn.resource == 'bing_custom_grounding')) > 0
-var bingCustomConnectionName = hasBingCustomConfig ? filter(additionalDependentResources, conn => conn.resource == 'bing_custom_grounding')[0].connectionName : 'bing-custom-grounding-connection'
 
 // Enable monitoring via Log Analytics and Application Insights
 module logAnalytics '../monitor/loganalytics.bicep' = if (enableMonitoring) {
@@ -237,30 +232,6 @@ module acr '../host/acr.bicep' = if (hasAcrConnection) {
   }
 }
 
-// Bing Search grounding module - deploy if Bing connection is defined in ai.yaml or parameter is enabled
-module bingGrounding '../search/bing_grounding.bicep' = if (hasBingConnection) {
-  name: 'bing-grounding'
-  params: {
-    tags: tags
-    resourceName: 'bing-${resourceToken}'
-    connectionName: bingConnectionName
-    aiServicesAccountName: aiAccount.name
-    aiProjectName: aiAccount::project.name
-  }
-}
-
-// Bing Custom Search grounding module - deploy if custom Bing connection is defined in ai.yaml or parameter is enabled
-module bingCustomGrounding '../search/bing_custom_grounding.bicep' = if (hasBingCustomConnection) {
-  name: 'bing-custom-grounding'
-  params: {
-    tags: tags
-    resourceName: 'bingcustom-${resourceToken}'
-    connectionName: bingCustomConnectionName
-    aiServicesAccountName: aiAccount.name
-    aiProjectName: aiAccount::project.name
-  }
-}
-
 // Azure AI Search module - deploy if search connection is defined in ai.yaml
 module azureAiSearch '../search/azure_ai_search.bicep' = if (hasSearchConnection) {
   name: 'azure-ai-search'
@@ -297,17 +268,6 @@ output dependentResources object = {
     name: hasAcrConnection ? acr!.outputs.containerRegistryName : ''
     loginServer: hasAcrConnection ? acr!.outputs.containerRegistryLoginServer : ''
     connectionName: hasAcrConnection ? acr!.outputs.containerRegistryConnectionName : ''
-  }
-  bing_grounding: {
-    name: (hasBingConnection) ? bingGrounding!.outputs.bingGroundingName : ''
-    connectionName: (hasBingConnection) ? bingGrounding!.outputs.bingGroundingConnectionName : ''
-    connectionId: (hasBingConnection) ? bingGrounding!.outputs.bingGroundingConnectionId : ''
-  }
-  bing_custom_grounding: {
-    name: (hasBingCustomConnection) ? bingCustomGrounding!.outputs.bingCustomGroundingName : ''
-    connectionName: (hasBingCustomConnection) ? bingCustomGrounding!.outputs.bingCustomGroundingConnectionName : ''
-    connectionId: (hasBingCustomConnection) ? bingCustomGrounding!.outputs.bingCustomGroundingConnectionId : ''
-    configInstanceName: (hasBingCustomConnection) ? bingCustomGrounding!.outputs.bingCustomGroundingConfigInstanceName : ''
   }
   search: {
     serviceName: hasSearchConnection ? azureAiSearch!.outputs.searchServiceName : ''
@@ -347,7 +307,7 @@ type deploymentsType = {
 
 type dependentResourcesType = {
   @description('The type of dependent resource to create')
-  resource: 'storage' | 'registry' | 'azure_ai_search' | 'bing_grounding' | 'bing_custom_grounding'
+  resource: 'storage' | 'registry' | 'azure_ai_search'
   
   @description('The connection name for this resource')
   connectionName: string
