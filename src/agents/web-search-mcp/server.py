@@ -70,17 +70,15 @@ def web_search(query: str) -> list[dict]:
     """Run a domain-filtered DuckDuckGo search and return results."""
     log.info("web_search query=%r allowed=%s", query, _ALLOWED_DOMAINS or "*")
 
-    # Push the domain filter into the query as a `site:` OR clause for better
-    # recall before we post-filter the response.
-    if _ALLOWED_DOMAINS:
-        site_clause = " OR ".join(f"site:{d}" for d in _ALLOWED_DOMAINS)
-        effective_query = f"({site_clause}) {query}"
-    else:
-        effective_query = query
+    # Don't push `site:` clauses into the query string. Long
+    # `(site:a OR site:b OR ...)` blocks cause some upstream backends
+    # (notably Brave) to rate-limit (HTTP 429) and degrade result quality.
+    # Instead, oversample and post-filter by hostname.
+    candidate_cap = _MAX_RESULTS * (10 if _ALLOWED_DOMAINS else 1)
 
     results: list[dict] = []
     with DDGS() as client:
-        for hit in client.text(effective_query, max_results=_MAX_RESULTS * 3):
+        for hit in client.text(query, max_results=candidate_cap):
             url = hit.get("href") or hit.get("url") or ""
             if not url or not _matches_allowed(url):
                 continue
